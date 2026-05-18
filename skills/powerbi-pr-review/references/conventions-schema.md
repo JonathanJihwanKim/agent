@@ -10,13 +10,26 @@ generated_by: powerbi-main-profiler
 generated_at: <ISO-8601 UTC>
 main_sha: <full SHA of main HEAD at scan time>
 repo_root: <relative path of PBIP root, usually ".">
+scope: <full | sampled | project-hygiene-only>
 semantic_models:
   - <name>.SemanticModel
 reports:
   - <name>.Report
+sampled_models:        # required when scope == sampled; omit otherwise
+  - <name>.SemanticModel
+sampled_reports:       # required when scope == sampled; omit otherwise
+  - <name>.Report
 notes: <free-form text the profiler can add — e.g. "scanned 47 tables, 312 measures">
 ---
 ```
+
+### `scope` values
+
+| Value | When | Reviewer behavior |
+| --- | --- | --- |
+| `full` | `≤3` semantic models AND `≤3` reports on `main` — profiled exhaustively. | Treat conventions as authoritative. |
+| `sampled` | More than 3 of either; user picked up to 3 of each via `AskUserQuestion`. `sampled_models` / `sampled_reports` list what was actually scanned. | Treat conventions as indicative. Emit a 🔵 caveat that findings against §2 / §3 may miss models/reports not in the sample. |
+| `project-hygiene-only` | User declined to pick any sample. Only §1 (project hygiene) is populated; §2 and §3 contain `No observable convention (out of scope: scope=project-hygiene-only).` | Skip §2 / §3 convention passes entirely; rely on MS Learn + BPA only. Emit a 🔵 caveat. |
 
 ## Required sections
 
@@ -127,6 +140,8 @@ A bullet list the profiler can confidently say `main` enforces 100%. Any PR devi
 The reviewer must reject a conventions file that:
 
 - Lacks the YAML frontmatter
+- Is missing the `scope` field
+- Has `scope: sampled` without a non-empty `sampled_models` / `sampled_reports` list
 - Is missing any required section
 - Has an empty section without "No observable convention."
 - Has a `main_sha` that doesn't match `git rev-parse <target-branch>` (mark stale, not invalid).

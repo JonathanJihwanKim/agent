@@ -14,7 +14,7 @@ You produce the actual review. You do not fix anything, do not push anything, do
 - **diff_range** — e.g. `abc1234...def5678` (merge-base...HEAD).
 - **conventions_path** — absolute path to `<repo_root>/.claude/powerbi-conventions.md`.
 - **references_dir** — absolute path to the skill's `references/` directory.
-- **mode** — `full-review` (default) or `questions-only`.
+- **mode** — `full-review` (default), `questions-only` (only the 🔵 section), or `enhancements-only` (only the 💡 section).
 
 ## Hard rules
 
@@ -23,7 +23,8 @@ You produce the actual review. You do not fix anything, do not push anything, do
 3. **Source attribution required.** Every "Why" line ends with `Source: <conventions §X.Y | MS Learn URL | BPA rule ID>`.
 4. **No invented rules.** If a concern doesn't map to a real conventions section, MS Learn page, or BPA ID in `references/bpa-rules-digest.md`, frame it as a 🔵 question instead.
 5. **Report each issue only once,** at its highest applicable severity.
-6. **Never review a file the diff didn't change.** Out-of-scope context is fine, but findings target only changed lines.
+6. **Findings (🔴 / 🟡 / 🔵) target only changed lines.** Pre-existing state the diff did not change is **never** a finding. If you would have written a 🔵 question about unchanged state, demote it to a 💡 *Enhancement suggestion* in the dedicated subsection. Every 💡 item must open with `Not a change in this PR — …`. Out-of-scope context (e.g. reading surrounding TMDL to understand the change) is fine; surfacing it as a question is not.
+7. **Visual identity in `Where`.** For any path containing `/visuals/<id>/` or `/pages/<id>/`, the `Where` line must include the resolved `visual <type> "<title>" on page "<pageName>"` (or `page "<pageName>"` for page-level paths). The Step 2b visual identity index does this resolution.
 
 ## Workflow
 
@@ -58,6 +59,33 @@ Bucket the changed files:
 | Other | everything else (ignored, list count only) |
 
 If a single PR mixes a PBIR `definition/` folder with a legacy `report.json` in the same `.Report/`, that's a **🔴 Blocker** all by itself.
+
+### Step 2b — build the visual identity index
+
+The reviewer must never cite a visual by its 20-char folder ID alone. Before running any PBIR rule passes, build an in-memory map `visual_index[<visualFolder>] → { type, title, pageName, pageFolder }`.
+
+For every diff path matching `*.Report/definition/pages/<pageFolder>/visuals/<visualFolder>/(visual.json|mobile.json)`:
+
+```bash
+# Read both files at HEAD (the change's tip), not the working tree
+git show "<head-sha>:<reportRoot>/definition/pages/<pageFolder>/visuals/<visualFolder>/visual.json"
+git show "<head-sha>:<reportRoot>/definition/pages/<pageFolder>/page.json"
+```
+
+Extract:
+
+| Field | Source path in the JSON | Fallback |
+| --- | --- | --- |
+| `type` | `visual.visualType` (PBIR field, e.g. `card`, `tableEx`, `pivotTable`, `actionButton`) | `"unknown-type"` |
+| `title` | `visual.objects.title.properties.text.expr.Literal.Value` (strip surrounding `'…'` quotes) | `null` → render as `"untitled"` |
+| `pageName` | `page.json.displayName` | `page.json.name` → folder name |
+| `pageFolder` | the `<pageFolder>` path segment | (always present) |
+
+Also map `pageFolder → pageName` (`page_index`) so page-level paths (e.g. `pages/<pageFolder>/page.json`) can be cited as `page "<pageName>"`.
+
+If a `visual.json` was **deleted** in the diff, read it from the merge-base (`git show "<base-sha>:<path>"`). Findings about deleted visuals still need a human-readable label.
+
+The index is the canonical source for the `Where` line. Findings that reference a visual without consulting the index are bugs.
 
 ### Step 3 — for each TMDL file, run three rule passes
 
@@ -113,6 +141,16 @@ Walk `references/ms-learn-pbir.md`:
 
 Also check team-conventions section 3.
 
+**Visual citation requirement.** For any finding whose path contains `/visuals/<id>/`, look up `visual_index[<id>]` (built in Step 2b) and write the `Where` line as:
+
+> `<path>:<line>` — visual `<type>` `"<title or 'untitled'>"` on page `"<pageName>"`
+
+For paths containing `/pages/<pageFolder>/page.json`, use:
+
+> `<path>:<line>` — page `"<pageName>"`
+
+When generating 🔵 questions for the PBIR area, phrase them with the same human-readable label (e.g. "On the **card** visual `'Total Picked'` on page **'Picking Capacity'** — was the title intentional?"). Never write a question that names only the folder ID.
+
 #### Project-hygiene files
 
 Walk `references/ms-learn-pbip.md`:
@@ -129,10 +167,14 @@ These don't fit a single file:
 - **Scope cohesion.** Does the diff touch multiple unrelated concerns (e.g. semantic-model rewrite + report cosmetic tweak)? If yes → 🟡 with "Source: ms-learn-lifecycle.md (commit batching)".
 - **Diff size.** If `git diff --shortstat` shows > 500 changed files or > 5000 changed lines, raise 🟡: "Hard to roll back atomically."
 - **Stale conventions.** If you noted in step 1 that the conventions profile is stale, raise 🔵 asking the user whether to refresh first.
+- **Sampled / hygiene-only conventions.** Read the `scope:` value in the conventions frontmatter:
+  - `scope: sampled` → raise 🔵: "Conventions profile sampled from `<sampled_models>` / `<sampled_reports>` on `main` (not exhaustive). Findings against team conventions §2 / §3 may miss models/reports outside the sample."
+  - `scope: project-hygiene-only` → raise 🔵: "Conventions profile covers project hygiene only — no §2 / §3 conventions were profiled. Team-conventions pass was skipped; review is MS Learn + BPA only."
+  - `scope: full` → no caveat.
 
 ### Step 6 — render the report
 
-Use the structure in `templates/review-report.template.md` (which mirrors `references/review-rubric.md`). Number findings within each severity (B1, B2, …; S1, S2, …; Q1, Q2, …).
+Use the structure in `templates/review-report.template.md` (which mirrors `references/review-rubric.md`). Number findings within each category (B1, B2, …; S1, S2, …; Q1, Q2, …; E1, E2, …).
 
 Fill the `Summary` paragraph honestly:
 
@@ -141,18 +183,32 @@ Fill the `Summary` paragraph honestly:
 
 For each finding:
 
-- **Where** → `path/to/file:LINE`. For multi-line concerns, cite the first affected line.
+- **Where** → `path/to/file:LINE`. For multi-line concerns, cite the first affected line. For PBIR visual/page paths, append the human-readable label from the Step 2b visual index (`visual <type> "<title>" on page "<pageName>"` or `page "<pageName>"`).
 - **What** → one sentence. No more.
 - **Why** → one sentence ending in `Source: …`.
 - **Suggested fix** → one to two lines. For 🔵 questions, replace with **Comment to author:** (paste-ready PR comment).
 
-### Step 7 — handle `questions-only` mode
+For the 💡 *Enhancement suggestions* subsection (existing state, not part of this PR):
+
+- **Where** → `path/to/file:LINE` followed by `(existing on \`main\` — not changed by this PR)`. For visuals, include the human-readable label.
+- **Note** → one sentence opening with `Not a change in this PR — …`. Explain the proposed enhancement and why it's worth considering. No `Why:`, no `Suggested fix:`, no `Source:` line — these are optional suggestions, not findings.
+- Cap at **5 enhancements per report by default.** If more were generated, list 5 and end the subsection with: `_N additional suggestions omitted; rerun in `enhancements-only` mode to see all._`
+- Do not number 💡 items in the Summary counts as severities — they're not severities. The Summary line for 💡 reads `💡 Enhancement suggestions (existing state): <count>`.
+
+### Step 7 — handle mode-restricted output
 
 If `mode == questions-only`:
 
-- Skip rendering 🔴 and 🟡 sections.
+- Skip rendering 🔴, 🟡, and 💡 sections.
 - Output only the 🔵 questions block, with each as a paste-ready PR review comment.
 - Skip the Summary paragraph.
+
+If `mode == enhancements-only`:
+
+- Skip rendering 🔴, 🟡, and 🔵 sections.
+- Output only the 💡 enhancements block. Do not apply the 5-item cap — list all of them.
+- Skip the Summary paragraph.
+- Every item still must open with `Not a change in this PR — …`.
 
 ### Step 8 — return
 

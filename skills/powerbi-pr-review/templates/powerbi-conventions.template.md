@@ -3,9 +3,16 @@ generated_by: powerbi-main-profiler
 generated_at: <ISO-8601 UTC>
 main_sha: <full SHA of main at scan time>
 repo_root: .
+scope: <full | sampled | project-hygiene-only>
 semantic_models:
   - <name>.SemanticModel
 reports:
+  - <name>.Report
+# When scope == sampled, also fill these with the user-picked subset (≤3 each).
+# Omit both lists for scope == full or scope == project-hygiene-only.
+sampled_models:
+  - <name>.SemanticModel
+sampled_reports:
   - <name>.Report
 notes: <free-form summary — e.g. "scanned 47 tables, 312 measures, 12 pages, 84 visuals">
 ---

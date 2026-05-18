@@ -11,7 +11,7 @@ You are the orchestrator for a critical review of a Power BI pull request. You d
 
 - **Repo root** — the working directory. Must contain a `*.pbip` file or a `*.SemanticModel/` or `*.Report/` folder.
 - **Diff target branch** — default `main`. Override via the user's request (e.g. "review against develop").
-- **Mode** — `full-review` (default) or `questions-only` (only the 🔵 question section).
+- **Mode** — `full-review` (default), `questions-only` (only the 🔵 questions section), or `enhancements-only` (only the 💡 enhancements section).
 
 ## Workflow
 
@@ -49,10 +49,28 @@ Branch on what you find:
 
 | State | Action |
 | --- | --- |
-| Both missing | Dispatch the `powerbi-main-profiler` subagent (see below), then proceed. Tell the user one sentence: "No team-conventions profile yet — running the profiler against `<target-branch>` first." |
+| Both missing | Enumerate models/reports on the target branch first (see step 3a below), then dispatch the `powerbi-main-profiler` subagent with the resolved scope. Tell the user one sentence: "No team-conventions profile yet — running the profiler against `<target-branch>` first." |
 | File exists, no memory pointer | Read the file, write a memory pointer with the current `main` SHA, proceed. |
 | Both exist, SHA matches `main` tip | Proceed silently. |
 | Both exist, SHA stale | Use `AskUserQuestion`: "The conventions profile is from commit `<old SHA>`; `main` is now `<new SHA>`. Refresh before reviewing?" Default to "Refresh" if the user picks "yes"; otherwise proceed with the stale profile and note it in the final report. |
+
+#### 3a. Resolve profiler scope (only when dispatching the profiler)
+
+Never auto-skip the profiler because the repo is large. Always sample instead.
+
+```bash
+git ls-tree -d --name-only "<target-branch>" | grep -E '\.SemanticModel$|\.Report$'
+```
+
+Count semantic models (`M`) and reports (`R`):
+
+| Condition | Action | Profiler input |
+| --- | --- | --- |
+| `M ≤ 3` AND `R ≤ 3` | Dispatch profiler in `full` scope. | `scope: full` |
+| Otherwise | Use `AskUserQuestion` with **two** questions: (1) "Pick up to 3 semantic models to profile" with the enumerated `*.SemanticModel/` names (multi-select, max 3); (2) same for `*.Report/`. Include file counts per item so the user can pick representative ones. Pass the selections to the profiler. | `scope: sampled`, `selected_models: [...]`, `selected_reports: [...]` |
+| User picks zero on both questions | Dispatch profiler in `project-hygiene-only` scope. The reviewer will lean on MS Learn + BPA only and emit a 🔵 caveat in the report. | `scope: project-hygiene-only` |
+
+Never silently skip. The conventions file's `scope` field tells the reviewer how to caveat its findings.
 
 ### 4. Dispatch the reviewer
 
@@ -61,17 +79,16 @@ Spawn the `powerbi-pr-reviewer` subagent with:
 - Diff range: `<merge-base>...HEAD`
 - Conventions file path: `<repo-root>/.claude/powerbi-conventions.md`
 - References directory path: `<this-skill>/references/`
-- Mode: `full-review` or `questions-only` (default `full-review`)
+- Mode: `full-review`, `questions-only`, or `enhancements-only` (default `full-review`)
 
 The reviewer returns Markdown — pass it through verbatim into the chat surface. Do not summarize or compress.
 
 ### 5. Offer a follow-up
 
-After rendering the report, ask once via `AskUserQuestion`:
+After rendering the report, ask once via `AskUserQuestion` with two options (plus the always-available "Other"):
 
-> Want me to draft inline review questions (the 🔵 section, phrased as PR comments you can paste)?
-
-If yes, re-dispatch the reviewer in `questions-only` mode.
+- "Draft inline review questions (the 🔵 section, phrased as PR comments you can paste)" → re-dispatch in `questions-only` mode.
+- "Show all enhancement suggestions (the 💡 section, including any that were truncated)" → re-dispatch in `enhancements-only` mode.
 
 ## Tool priority
 

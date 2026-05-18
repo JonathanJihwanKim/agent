@@ -15,6 +15,9 @@ You build the team-conventions profile from the **main branch** of a PBIP repo. 
 - **target_branch** — usually `main`, but the user may override.
 - **schema_path** — absolute path to `references/conventions-schema.md`.
 - **template_path** — absolute path to `templates/powerbi-conventions.template.md`.
+- **scope** — `full` (default), `sampled`, or `project-hygiene-only`. The orchestrator decides this in its Step 3a based on counts and/or user selection. Never auto-skip; if the orchestrator passes nothing, assume `full`.
+- **selected_models** — required when `scope == sampled`. List of `*.SemanticModel/` folder names (≤3) the user picked.
+- **selected_reports** — required when `scope == sampled`. List of `*.Report/` folder names (≤3) the user picked.
 
 ## Hard rules
 
@@ -41,6 +44,14 @@ git ls-tree -r --name-only "$target_branch" | grep -E "(\.SemanticModel/|\.Repor
 ```
 
 Identify each `<name>.SemanticModel/` and `<name>.Report/`. A repo can have multiple of each.
+
+#### Scope resolution
+
+- If `scope == full` → iterate over **every** `*.SemanticModel/` in Step 4 and every `*.Report/` in Step 5. Set `sampled_models: []` and `sampled_reports: []` (frontmatter omits both lists per [conventions-schema.md](../references/conventions-schema.md)).
+- If `scope == sampled` → iterate only over `selected_models` in Step 4 and `selected_reports` in Step 5. Write both lists into the frontmatter. The full enumerations still populate `semantic_models:` / `reports:` so the reviewer knows what was *not* covered.
+- If `scope == project-hygiene-only` → run Step 3 only. Skip Steps 4 and 5. Write "No observable convention (out of scope: scope=project-hygiene-only)." into every required §2 and §3 subsection.
+
+Never silently drop work. If the orchestrator passed `sampled` with empty selections, treat that as a bug and exit with: "Profiler got `scope=sampled` but no `selected_models` or `selected_reports`. Orchestrator should have routed to `project-hygiene-only`."
 
 ### Step 3 — scan project hygiene
 
@@ -117,6 +128,12 @@ For each `<name>.Report/`:
 - Sample page-folder names: are they default 20-char IDs or human-readable?
 - For each `visual.json` and `page.json`, check for `$schema` declaration → coverage %.
 - Mobile coverage: count of `mobile.json` files vs total visuals.
+- **Visual identity sample.** Read up to 10 `visual.json` files (per report) and their sibling `page.json` via `git show "$target_branch:$path"`. From each, extract:
+  - `visual.visualType` (e.g. `card`, `tableEx`, `pivotTable`)
+  - `visual.objects.title.properties.text.expr.Literal.Value` (the visible title; may be absent for untitled visuals)
+  - parent `page.json.displayName` (or `name` if no `displayName`)
+
+  Note the **dominant visual title style** (e.g. "all titled vs. mostly untitled") under §3.2 in the conventions file. This sample is also the reference set the reviewer's Step 2b uses for sanity-checks — it's diagnostic, not exhaustive.
 
 **Theme + resources**
 - List files under `StaticResources/RegisteredResources/`.
@@ -129,9 +146,13 @@ For each `<name>.Report/`:
 ### Step 6 — write the conventions file + memory pointer
 
 1. Render the result by filling in `templates/powerbi-conventions.template.md`.
-2. Write to `<repo_root>/.claude/powerbi-conventions.md`. Create the `.claude/` directory if it doesn't exist.
-3. Validate the output against `references/conventions-schema.md` — every required section must be present.
-4. Write the memory pointer. The memory directory for the current cwd is at `~/.claude/projects/<cwd-slug>/memory/`. Create a `reference_powerbi_conventions.md` file:
+2. Stamp the frontmatter:
+   - `scope:` ← the value passed in by the orchestrator.
+   - When `scope == sampled`: write `sampled_models:` and `sampled_reports:` with the user-selected lists. The full enumerations remain in `semantic_models:` / `reports:` so the reviewer knows what was out of scope.
+   - When `scope == full` or `scope == project-hygiene-only`: omit `sampled_models` / `sampled_reports` entirely.
+3. Write to `<repo_root>/.claude/powerbi-conventions.md`. Create the `.claude/` directory if it doesn't exist.
+4. Validate the output against `references/conventions-schema.md` — every required section must be present.
+5. Write the memory pointer. The memory directory for the current cwd is at `~/.claude/projects/<cwd-slug>/memory/`. Create a `reference_powerbi_conventions.md` file:
 
 ```markdown
 ---
@@ -154,8 +175,9 @@ Append `- [powerbi-conventions](reference_powerbi_conventions.md) — points to 
 Return a single message:
 
 ```
-Conventions profile written to <repo_root>/.claude/powerbi-conventions.md.
+Conventions profile written to <repo_root>/.claude/powerbi-conventions.md (scope: <full | sampled | project-hygiene-only>).
 Scanned <N> tables, <N> measures, <N> roles, <N> pages, <N> visuals on <target_branch>@<short_sha>.
+<when scope == sampled, name the sampled models/reports here: "Sampled: <model_a>, <model_b> | <report_a>.">
 <one-sentence headline finding — e.g. "Display folders are inconsistent (43% coverage); flagged in §5.">
 ```
 

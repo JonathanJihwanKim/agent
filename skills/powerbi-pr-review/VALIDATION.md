@@ -180,3 +180,48 @@ The conventions file calls these out under §1 as **grandfathered exemptions** s
 ## Installation path TBD
 
 Per the plan, packaging (Claude Code plugin marketplace vs `~/.claude/skills/` direct vs symlink) is being decided separately. Files live in `d:\agent\skills\powerbi-pr-review\` until then.
+
+## v1.1 changes — resolved against `JonathanJihwanKim/agent` issues #1, #2, #3
+
+**Date:** 2026-05-18 — driven by three real-run issues opened after the first user trial.
+
+### Issue #1 — "Sample, don't skip" when `main` is large
+
+**Before.** When `main` had ~40 semantic models and ~60 reports, the model auto-decided to skip the profiler entirely and run the reviewer with MS Learn + BPA only:
+
+> No conventions profile exists. Given the small diff (6 files, one semantic model + one report), I'll skip the full main-branch profiler (which would scan ~40 semantic models / ~60 reports) and run the reviewer using MS Learn + BPA references only.
+
+**After.** The orchestrator's new [Step 3a](SKILL.md#L41) enforces sample-don't-skip. When `M > 3 OR R > 3`, the orchestrator opens an `AskUserQuestion` with the enumerated lists and asks the user to pick **up to 3 semantic models and up to 3 reports**. The profiler receives `scope: sampled` + the picked subsets, and stamps both into the conventions frontmatter. The reviewer then emits a 🔵 caveat in §5 noting the sampled scope. If the user picks zero, the profiler runs in `project-hygiene-only` scope and the reviewer leans on MS Learn + BPA — but the decision is recorded, not silent.
+
+### Issue #2 — Visual citations include type + title + page
+
+**Before.** A finding/question about a `visual.json` cited only the folder ID:
+
+> **Where:** `MyReport.Report/definition/pages/90c2e07d8e84e7d5c026/visuals/3a8b41fde7c2b9d04a16/visual.json:42`
+
+**After.** The reviewer's new [Step 2b](agents/powerbi-pr-reviewer.md) builds a `visual_index` from `visual.json` + sibling `page.json` and rewrites every visual `Where` line as:
+
+> **Where:** `MyReport.Report/definition/pages/90c2e07d8e84e7d5c026/visuals/3a8b41fde7c2b9d04a16/visual.json:42` — visual `card` `"Total Picked"` on page `"Picking Capacity"`
+
+Same rule applies to 🔵 questions and 💡 enhancements. Hard rule #7 in the reviewer rejects folder-ID-only citations.
+
+### Issue #3 — Diff-anchored questions vs. enhancement suggestions
+
+**Before.** The reviewer emitted a 🔵 question about a measure name that wasn't changed in the PR. The user could not tell whether the reviewer thought the change was wrong or was suggesting a new improvement.
+
+**After.** The report now has two subsections:
+
+- **🔵 Nits / questions (on this diff)** — only questions anchored to lines the diff actually changes.
+- **💡 Enhancement suggestions (existing state, not part of this PR)** — every item opens with `Not a change in this PR — …`. Capped at 5 per report; `enhancements-only` mode shows them all.
+
+Hard rule #6 in the reviewer forbids 🔵 questions about unchanged content — they must be demoted to 💡 or dropped. The 💡 category is not a severity and never blocks merge.
+
+### Bundled improvements
+
+- `scope: full | sampled | project-hygiene-only` in the conventions frontmatter ([conventions-schema.md](references/conventions-schema.md), [powerbi-conventions.template.md](templates/powerbi-conventions.template.md)).
+- New parallel mode `enhancements-only` alongside `questions-only`.
+- Visual identity index documented as a reusable concept (future authoring skills can use the same lookup).
+
+### What was NOT re-validated end-to-end
+
+The skill still isn't installed in Claude Code, so the v1 caveat applies: changes have been dry-run-reviewed against the file paths above, but not exercised through subagent dispatch. The three "before" examples in this section come from the user-reported issues — the "after" forms are what the new rules require. Real validation will happen on the next user-run review against `D:\sample_powerbi` or another target repo.

@@ -181,6 +181,41 @@ The conventions file calls these out under §1 as **grandfathered exemptions** s
 
 Per the plan, packaging (Claude Code plugin marketplace vs `~/.claude/skills/` direct vs symlink) is being decided separately. Files live in `d:\agent\skills\powerbi-pr-review\` until then.
 
+## v1.2 changes — worktree-aware input resolution (Step 0)
+
+**Date:** 2026-05-19 — driven by a usability question after the first user trial: *"how should the skill ask for main vs. sub-branch?"*
+
+### Before
+
+The orchestrator assumed `target_branch = main` (hard-coded default) and `sub_branch = HEAD` (implicit). No detection of the actual default branch, no `git worktree list` awareness, no validation that `HEAD ≠ main`. A user running the skill from their main worktree got a self-review (`main` vs `main`) with no diff. A user with a non-`main` default branch had to know to override.
+
+### After
+
+A new [Step 0 — Detect & confirm inputs](SKILL.md#0-detect--confirm-inputs) runs read-only `git` probes (`symbolic-ref HEAD`, `symbolic-ref refs/remotes/origin/HEAD`, `for-each-ref refs/heads/`, `worktree list --porcelain`) and classifies into one of three scenarios:
+
+- **A — on a feature branch** (single-clone *or* feature worktree, doesn't matter): pre-fill `target_branch = <default>`, `sub_branch = <HEAD>`. Show one confirmation.
+- **B — on the default branch**: list every local non-default branch (worktree path annotated when present) and ask the user to pick. Abort if no other local branches exist.
+- **C — detached HEAD or non-git cwd**: abort with the specific diagnostic.
+
+The skill operates on branch **names**, not checked-out trees — `git diff <a>...<b>` and `git show <branch>:<path>` work whether or not the sub-branch is in a worktree. This means the single-clone workflow (`git checkout -b feature/x`) and the multi-worktree workflow (`git worktree add`) are both first-class; the only difference is the annotation shown in Scenario B.
+
+Confirmation is **always** asked once (decided trade-off — a wrong-branch review wastes minutes; one click is cheap), **except** when the user's invocation already named both branches (e.g. *"review feature/x against develop"*). In that case, the orchestrator runs `git rev-parse --verify` on each and proceeds.
+
+Subsequent steps were updated to consume `target_branch` and `sub_branch` explicitly instead of relying on `HEAD`:
+
+- Step 2's `git diff --name-only` uses `<merge-base>...<sub_branch>` (was `...HEAD`).
+- Step 3's conventions-staleness check is keyed on `<target_branch>` SHA (was hard-coded `main`).
+- Step 4's reviewer dispatch passes `<merge-base>...<sub_branch>` as the diff range.
+
+### Out of scope (deferred to v1.3+)
+
+- Remote-only branches with no local tracking branch — current behavior is to abort with: "`<branch>` exists only on the remote. `git checkout <branch>` (or `git fetch && git branch <branch> origin/<branch>`) first, then re-run."
+- No `git fetch <branch>:<branch>` shimming for fully-detached remote refs.
+
+### What was NOT re-validated end-to-end
+
+Same v1 caveat: the skill still isn't installed in Claude Code, so the new Step 0 has been authored but not exercised through subagent dispatch. Next user-run review against `D:\sample_powerbi` (or another target with feature worktrees) will be the first true end-to-end test.
+
 ## v1.1 changes — resolved against `JonathanJihwanKim/agent` issues #1, #2, #3
 
 **Date:** 2026-05-18 — driven by three real-run issues opened after the first user trial.

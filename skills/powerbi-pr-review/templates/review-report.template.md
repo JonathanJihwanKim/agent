@@ -4,6 +4,15 @@
 **Conventions profile:** `.claude/powerbi-conventions.md` taken at `<sha>` (`<fresh | stale>`, scope=`<full | sampled | project-hygiene-only>`)
 **References:** MS Learn (PBIP, TMDL, PBIR, Fabric Git, Lifecycle) + BPA digest
 
+## TL;DR
+
+<First sentence: the merge-or-don't-merge call. Examples:
+"Do not merge — three localSettings.json files leak per-user DPAPI secrets and the PR bundles two unrelated reports under one ticket."
+"Merge after the 4 should-fix items; no blockers."
+"Merge clean — the diff matches the stated intent and follows team conventions.">
+
+<1–3 follow-up sentences: the load-bearing reasons for the call. Name scope (TMDL only / PBIR only / both), size, and whether the PR bundles unrelated concerns. A reader who reads only the first sentence should know the call.>
+
 ## Summary
 
 - 🔴 Blockers: `<count>`
@@ -11,16 +20,13 @@
 - 🔵 Nits / questions (on this diff): `<count>`
 - 💡 Enhancement suggestions (existing state): `<count>`
 
-<One paragraph: what's the spirit of this PR, and is it well-executed? Mention scope (TMDL only, PBIR only, both), size, and whether it bundles unrelated concerns.>
-
 ## 🔴 Blockers
 
-### B1. <one-line title>
+### B1. <verdict heading — name the action or the conclusion (e.g. "Drop three localSettings.json files — they leak DPAPI secrets and .gitignore is already configured to ignore them"). Not a label. Not a location. ≤ 18 words, no trailing punctuation.>
 
-- **Where:** `<path>:<line>` — for PBIR visuals also write: `visual <type> "<title or 'untitled'>" on page "<pageName>"` (resolved by the Step 2b visual identity index).
-- **What:** <one-sentence description>
 - **Why:** <one-sentence rationale> — Source: <conventions §X.Y | MS Learn URL | BPA rule ID>
-- **Suggested fix:** <one or two lines>
+- **Where:** `<path>:<line>` — for PBIR visuals also write: `visual <type> "<title or 'untitled'>" on page "<pageName>"` (resolved by the Step 2b visual identity index).
+- **Fix:** <one or two lines>
 
 ```tmdl
 <offending snippet if > 20 chars>
@@ -30,18 +36,17 @@
 
 ## 🟡 Should-fix
 
-### S1. <one-line title>
+### S1. <verdict heading — the action or conclusion>
 
-- **Where:** `<path>:<line>`
-- **What:** <one-sentence description>
 - **Why:** <one-sentence rationale> — Source: <…>
-- **Suggested fix:** <one or two lines>
+- **Where:** `<path>:<line>`
+- **Fix:** <one or two lines>
 
 <!-- repeat; if none, write "_No should-fix findings._" -->
 
 ## 🔵 Nits / questions (on this diff)
 
-### Q1. <one-line title>
+### Q1. <the question itself, phrased as a question — this is the verdict>
 
 - **Where:** `<path>:<line>` — for PBIR visuals also write `visual <type> "<title>" on page "<pageName>"`.
 - **Comment to author:** <single sentence, phrased as a question, paste-ready, about a line that the diff actually changes>
@@ -50,7 +55,7 @@
 
 ## 💡 Enhancement suggestions (existing state, not part of this PR)
 
-### E1. <one-line title>
+### E1. <verdict heading — the proposed enhancement, stated as the conclusion>
 
 - **Where:** `<path>:<line>` (existing on `main` — not changed by this PR) — for PBIR visuals also write `visual <type> "<title>" on page "<pageName>"`.
 - **Note:** Not a change in this PR — <one sentence: what enhancement, and why it's worth considering>.

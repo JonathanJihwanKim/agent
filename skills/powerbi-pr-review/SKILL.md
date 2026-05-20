@@ -7,6 +7,11 @@ description: Critically review a Power BI pull request (local branch diff vs. ma
 
 You are the orchestrator for a critical review of a Power BI pull request. You delegate the heavy work to two subagents and stitch their output into the final report.
 
+## Hard rules for the orchestrator
+
+1. **Never silently downgrade the profile scope.** If [Step 3a](#3a-resolve-profiler-scope-only-when-dispatching-the-profiler) applies (no conventions file AND `M > 3 OR R > 3`), the gate `AskUserQuestion` **must** appear in the chat surface. The transcript of any review must show an explicit user choice — `Profile a sample` / `Skip profile` / `Cancel`. Falling through to `project-hygiene-only` without the user having seen and answered that question is a bug; re-ask the gate.
+2. **Pass the reviewer's output through verbatim.** The reviewer emits the report in topic-first form (TL;DR → Summary → severity sections). Do not reorder, re-summarize, compress, or insert preamble. The first line of chat output is the report's `#` heading.
+
 ## Inputs (resolved from the conversation)
 
 - **Repo root** — the working directory. Must contain a `*.pbip` file or a `*.SemanticModel/` or `*.Report/` folder.
@@ -98,10 +103,11 @@ Branch on what you find:
 | File exists, no memory pointer | Read the file, write a memory pointer with the current `<target_branch>` SHA, proceed. |
 | Both exist, SHA matches `<target_branch>` tip | Proceed silently. |
 | Both exist, SHA stale | Use `AskUserQuestion`: "The conventions profile is from commit `<old SHA>`; `<target_branch>` is now `<new SHA>`. Refresh before reviewing?" Default to "Refresh" if the user picks "yes"; otherwise proceed with the stale profile and note it in the final report. |
+| File exists with `scope: project-hygiene-only` AND `user_chose_skip: true` (or the memory pointer's `Skip reason: user-explicit-skip`) | Re-offer the §3a gate. Tell the user: "The existing profile is a hygiene-only stub from a previous explicit skip — do you want to profile a sample now, or continue with hygiene-only?" Do not silently reuse the stub as if it were a real profile. |
 
 #### 3a. Resolve profiler scope (only when dispatching the profiler)
 
-Never auto-skip the profiler because the repo is large. Always sample instead.
+Never auto-skip the profiler because the repo is large. The gate prompt below is **mandatory** when the threshold is exceeded — the orchestrator cannot route to `project-hygiene-only` without showing it.
 
 ```bash
 git ls-tree -d --name-only "<target_branch>" | grep -E '\.SemanticModel$|\.Report$'
@@ -111,11 +117,43 @@ Count semantic models (`M`) and reports (`R`):
 
 | Condition | Action | Profiler input |
 | --- | --- | --- |
-| `M ≤ 3` AND `R ≤ 3` | Dispatch profiler in `full` scope. | `scope: full` |
-| Otherwise | Use `AskUserQuestion` with **two** questions: (1) "Pick up to 3 semantic models to profile" with the enumerated `*.SemanticModel/` names (multi-select, max 3); (2) same for `*.Report/`. Include file counts per item so the user can pick representative ones. Pass the selections to the profiler. | `scope: sampled`, `selected_models: [...]`, `selected_reports: [...]` |
-| User picks zero on both questions | Dispatch profiler in `project-hygiene-only` scope. The reviewer will lean on MS Learn + BPA only and emit a 🔵 caveat in the report. | `scope: project-hygiene-only` |
+| `M ≤ 3` AND `R ≤ 3` | Dispatch profiler in `full` scope — no prompt needed. | `scope: full` |
+| `M > 3` OR `R > 3` | **Run the gate `AskUserQuestion` below first.** Branch on the user's choice. | depends on choice |
 
-Never silently skip. The conventions file's `scope` field tells the reviewer how to caveat its findings.
+##### Gate question — mandatory when the threshold is exceeded
+
+A single-select `AskUserQuestion`. This is the only entry to the `sampled` and `project-hygiene-only` paths. Skipping it is a bug — see [Hard rules](#hard-rules-for-the-orchestrator) §1.
+
+> **Question:** "No team-conventions profile exists for this repo, and there are `<M>` semantic models / `<R>` reports on `<target_branch>` — too many to profile exhaustively in one pass. How should I proceed?"
+>
+> **Options (single-select, in this order):**
+>
+> - **Profile a sample (Recommended)** — Pick up to 3 models and up to 3 reports to profile. The reviewer treats conventions as indicative; findings outside the sample emit a 🔵 caveat.
+> - **Skip profile** — Accept `project-hygiene-only` scope. The reviewer leans on MS Learn + BPA only and emits a 🔵 caveat noting that no team-norm cross-check was done.
+> - **Cancel review** — Abort. The user can re-invoke when ready to profile.
+
+Route on the user's choice:
+
+- **Profile a sample** → run the two multi-selects below, then dispatch the profiler with `scope: sampled`, `selected_models: [...]`, `selected_reports: [...]`.
+- **Skip profile** → dispatch the profiler with `scope: project-hygiene-only`. The profiler still writes the conventions file (as a stub with `user_chose_skip: true`) so the absence of conventions is recorded, not implicit.
+- **Cancel review** → abort with: "Review cancelled. Re-invoke the skill when you're ready to profile or skip explicitly."
+
+##### Sample selection — only when the user picked "Profile a sample"
+
+Two multi-select `AskUserQuestion`s, one after the other:
+
+1. **"Pick up to 3 semantic models to profile"** — multi-select, max 3, options drawn from `*.SemanticModel/` names on `<target_branch>`.
+2. **"Pick up to 3 reports to profile"** — multi-select, max 3, options drawn from `*.Report/` names on `<target_branch>`.
+
+**Option labelling — mandatory.** For each option:
+
+- Annotate `(Recommended — touched by this PR)` for any model/report whose folder appears in the changed-files list from [Step 2](#2-resolve-the-diff-range). List these first.
+- The remaining options are sorted by file count descending (largest = most representative of team norms).
+- Every option label ends with the file count: `<name> — <N> files`.
+
+If the user picks zero on either multi-select (i.e. submits empty selections after entering the sample path), the orchestrator must re-ask the **gate question**, not silently downgrade to `project-hygiene-only` — the user already chose "Profile a sample," so an empty selection is an interaction error, not a scope choice.
+
+The conventions file's `scope` field (and the `user_chose_skip` flag) tells the reviewer how to caveat its findings.
 
 ### 4. Dispatch the reviewer
 

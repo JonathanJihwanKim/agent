@@ -11,6 +11,7 @@ generated_at: <ISO-8601 UTC>
 main_sha: <full SHA of main HEAD at scan time>
 repo_root: <relative path of PBIP root, usually ".">
 scope: <full | sampled | project-hygiene-only>
+user_chose_skip: <true | false>   # true only when scope == project-hygiene-only AND the user explicitly picked "Skip profile" at the SKILL.md §3a gate; otherwise false
 semantic_models:
   - <name>.SemanticModel
 reports:
@@ -28,8 +29,28 @@ notes: <free-form text the profiler can add — e.g. "scanned 47 tables, 312 mea
 | Value | When | Reviewer behavior |
 | --- | --- | --- |
 | `full` | `≤3` semantic models AND `≤3` reports on `main` — profiled exhaustively. | Treat conventions as authoritative. |
-| `sampled` | More than 3 of either; user picked up to 3 of each via `AskUserQuestion`. `sampled_models` / `sampled_reports` list what was actually scanned. | Treat conventions as indicative. Emit a 🔵 caveat that findings against §2 / §3 may miss models/reports not in the sample. |
-| `project-hygiene-only` | User declined to pick any sample. Only §1 (project hygiene) is populated; §2 and §3 contain `No observable convention (out of scope: scope=project-hygiene-only).` | Skip §2 / §3 convention passes entirely; rely on MS Learn + BPA only. Emit a 🔵 caveat. |
+| `sampled` | More than 3 of either; user picked "Profile a sample" at the §3a gate and selected up to 3 of each. `sampled_models` / `sampled_reports` list what was actually scanned. | Treat conventions as indicative. Emit a 🔵 caveat that findings against §2 / §3 may miss models/reports not in the sample. |
+| `project-hygiene-only` | User picked "Skip profile" at the §3a gate (`user_chose_skip: true`). Only §1 (project hygiene) is populated with real observations; §2 and §3 contain the stub line `No observable convention (out of scope: scope=project-hygiene-only).` in every required subsection. §1 also includes a one-line note that the skip was explicit. | Skip §2 / §3 convention passes entirely; rely on MS Learn + BPA only. Emit a 🔵 caveat. The next review run re-offers the §3a gate rather than silently reusing this stub. |
+
+### `user_chose_skip` field
+
+A boolean that distinguishes a deliberate skip from any other `project-hygiene-only` state:
+
+- `false` (default) — the field is present on every conventions file. Combined with `scope: full` or `scope: sampled`, this is a normal profiled state.
+- `true` — only valid when `scope == project-hygiene-only`. Signals that the user saw the §3a gate question and explicitly picked "Skip profile." Without this flag, an orchestrator encountering a `project-hygiene-only` file on a subsequent run cannot tell whether the previous user had a chance to choose. The flag preserves the audit trail.
+
+The reviewer (and the orchestrator's Step 3 staleness check) reads this flag to decide whether to surface a 🔵 caveat with the stronger framing *"no team-norm cross-check was done"* (when `true`) versus the milder *"profile is hygiene-only"* (when `false`).
+
+### `project-hygiene-only` stub-file expectations
+
+When `scope == project-hygiene-only`, the file is a stub, but every required body section must still be present (see "Required sections" below). Concretely:
+
+- **§1 Project hygiene** is populated with real observations from the target branch (`.gitignore` patterns, `.pbi/` files committed, `.pbip` pointer locations, file encoding, top-level folder naming). When `user_chose_skip: true`, the section opens with a one-line note: *"Skipped per user choice at the SKILL.md §3a gate — no §2 / §3 conventions profiled. Reviewer should cite only MS Learn + BPA and add a 🔵 caveat in the report."*
+- **Every required §2 subsection (2.1–2.7)** contains the literal string `No observable convention (out of scope: scope=project-hygiene-only).` and nothing else.
+- **Every required §3 subsection (3.1–3.4)** contains the same stub line.
+- **§4, §5, §6** are present with `No observable convention.` if nothing applies.
+
+This shape lets the reviewer's validation pass (every required section is present) while making the absence of profiled content explicit.
 
 ## Required sections
 
@@ -141,7 +162,10 @@ The reviewer must reject a conventions file that:
 
 - Lacks the YAML frontmatter
 - Is missing the `scope` field
+- Is missing the `user_chose_skip` field
+- Has `user_chose_skip: true` but `scope != project-hygiene-only`
 - Has `scope: sampled` without a non-empty `sampled_models` / `sampled_reports` list
+- Has `scope: project-hygiene-only` without the stub line in every required §2 / §3 subsection
 - Is missing any required section
 - Has an empty section without "No observable convention."
 - Has a `main_sha` that doesn't match `git rev-parse <target-branch>` (mark stale, not invalid).

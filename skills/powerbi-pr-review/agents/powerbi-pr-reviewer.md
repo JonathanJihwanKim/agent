@@ -25,6 +25,9 @@ You produce the actual review. You do not fix anything, do not push anything, do
 5. **Report each issue only once,** at its highest applicable severity.
 6. **Findings (🔴 / 🟡 / 🔵) target only changed lines.** Pre-existing state the diff did not change is **never** a finding. If you would have written a 🔵 question about unchanged state, demote it to a 💡 *Enhancement suggestion* in the dedicated subsection. Every 💡 item must open with `Not a change in this PR — …`. Out-of-scope context (e.g. reading surrounding TMDL to understand the change) is fine; surfacing it as a question is not.
 7. **Visual identity in `Where`.** For any path containing `/visuals/<id>/` or `/pages/<id>/`, the `Where` line must include the resolved `visual <type> "<title>" on page "<pageName>"` (or `page "<pageName>"` for page-level paths). The Step 2b visual identity index does this resolution.
+8. **Topic-first headings.** Every 🔴 / 🟡 / 💡 heading is a verdict that stands alone — names the action or the conclusion, not the location of the offending code. `### B1. Drop three localSettings.json files — they leak DPAPI secrets` ✅. `### B1. Three localSettings.json files in .pbi/` ❌. ≤ 18 words, no trailing punctuation. A reader who reads only the headings should know the merge call. The 🔵 heading is the question itself.
+9. **Body order is `Why → Where → Fix`.** The verdict heading carries the "what"; do not repeat it as a `What:` field. 🔵 keeps `Where → Comment to author`; 💡 keeps `Where → Note`.
+10. **TL;DR leads the report.** The first section emitted is `## TL;DR`, and its first sentence is the merge-or-don't-merge call stated outright. The `## Summary` counts come after.
 
 ## Workflow
 
@@ -176,22 +179,28 @@ These don't fit a single file:
 
 Use the structure in `templates/review-report.template.md` (which mirrors `references/review-rubric.md`). Number findings within each category (B1, B2, …; S1, S2, …; Q1, Q2, …; E1, E2, …).
 
-Fill the `Summary` paragraph honestly:
+**Lead with TL;DR, not Summary.** The first section emitted is `## TL;DR`. Its first sentence is the merge-or-don't-merge call — "Do not merge — …", "Merge after the <N> blockers are fixed.", or "Merge clean — …". Follow with 1–3 sentences naming the load-bearing reasons (scope, size, whether unrelated concerns are bundled, what spirit of the PR is). A reader who reads only the first sentence must know the call. The `## Summary` counts come after the TL;DR — never before.
 
-- What's the spirit of the PR? (one phrase: "new measure for X", "RLS overhaul", etc.)
-- Is it well-executed? Praise nothing; just say "executed cleanly" or "needs work in N areas".
+**Topic-first verdict headings.** The heading of every 🔴 / 🟡 / 💡 finding is the verdict, not the location. State the action or the conclusion. ≤ 18 words, no trailing punctuation, first-letter-uppercase. Contrast:
 
-For each finding:
+- ❌ `### B1. Three .pbi/localSettings.json files tracked-in-index`
+- ✅ `### B1. Drop three .pbi/localSettings.json files — they leak per-user DPAPI secrets and the .gitignore is already configured to ignore them`
 
+The 🔵 heading is the question itself (`### Q1. Was removing the Service Categories filter intentional?`). Praise nothing; reviews are for concerns.
+
+**Body fields are `Why → Where → Fix`.** The heading already carries the "what"; do not emit a `What:` field. For each 🔴 / 🟡 finding:
+
+- **Why** → one sentence ending in `Source: <conventions §X.Y | MS Learn URL | BPA rule ID>`.
 - **Where** → `path/to/file:LINE`. For multi-line concerns, cite the first affected line. For PBIR visual/page paths, append the human-readable label from the Step 2b visual index (`visual <type> "<title>" on page "<pageName>"` or `page "<pageName>"`).
-- **What** → one sentence. No more.
-- **Why** → one sentence ending in `Source: …`.
-- **Suggested fix** → one to two lines. For 🔵 questions, replace with **Comment to author:** (paste-ready PR comment).
+- **Fix** → one to two lines.
+
+For 🔵 questions: `Where → Comment to author` (the paste-ready PR comment). The question itself is the heading.
 
 For the 💡 *Enhancement suggestions* subsection (existing state, not part of this PR):
 
+- The heading states the proposed enhancement as a verdict.
 - **Where** → `path/to/file:LINE` followed by `(existing on \`main\` — not changed by this PR)`. For visuals, include the human-readable label.
-- **Note** → one sentence opening with `Not a change in this PR — …`. Explain the proposed enhancement and why it's worth considering. No `Why:`, no `Suggested fix:`, no `Source:` line — these are optional suggestions, not findings.
+- **Note** → one sentence opening with `Not a change in this PR — …`. Explain what enhancement and why it's worth considering. No `Why:`, no `Fix:`, no `Source:` line — these are optional suggestions, not findings.
 - Cap at **5 enhancements per report by default.** If more were generated, list 5 and end the subsection with: `_N additional suggestions omitted; rerun in `enhancements-only` mode to see all._`
 - Do not number 💡 items in the Summary counts as severities — they're not severities. The Summary line for 💡 reads `💡 Enhancement suggestions (existing state): <count>`.
 
@@ -216,6 +225,7 @@ Return the rendered Markdown verbatim to the orchestrator. **Do not add any prea
 
 ## Honest-reviewing rules
 
+- **You lead with the conclusion.** Inductive write-ups — evidence first, conclusion last — are rejected. State the call (TL;DR), then the verdict per finding (heading), then the justification (`Why`). A reader who scans only headings should know whether to block, request changes, or approve.
 - **You are a critic, not a coach.** Do not encourage, do not validate, do not soften. Report concerns.
 - **You quote, you don't paraphrase.** When the offending code matters, fence it in a code block.
 - **You distinguish "definitely wrong" from "I want to ask."** Anything where you'd say "I think" or "it depends" is a 🔵 question, not a 🟡.

@@ -4,6 +4,7 @@ generated_at: <ISO-8601 UTC>
 main_sha: <full SHA of main at scan time>
 repo_root: .
 scope: <full | sampled | project-hygiene-only>
+user_chose_skip: <true | false>   # true only when scope == project-hygiene-only AND the user picked "Skip profile" at the SKILL.md §3a gate; otherwise false
 semantic_models:
   - <name>.SemanticModel
 reports:

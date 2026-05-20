@@ -181,6 +181,60 @@ The conventions file calls these out under §1 as **grandfathered exemptions** s
 
 Per the plan, packaging (Claude Code plugin marketplace vs `~/.claude/skills/` direct vs symlink) is being decided separately. Files live in `d:\agent\skills\powerbi-pr-review\` until then.
 
+## v1.3 changes — resolved against `JonathanJihwanKim/agent` issue #4
+
+**Date:** 2026-05-20 — driven by the run-log attached to issue #4, which reviewed `ILOIA-7328-Oder-Management---Update-OM-report-filter` vs `main` in `cffinsights_ingka`. Two concrete complaints in the issue body:
+
+1. *"write topic-first-style, not inductive style"* — the run-log report led with location and built up to the conclusion. The user wants the verdict first.
+2. *"the skill and the agents are not asking users what is the best practices to reference. the instruction is to ask users to select three semantic models and three reports folders or less"* — the run-log shows the agent silently routed to `project-hygiene-only` instead of firing the §3a `AskUserQuestion`. The contract documented in SKILL.md was breached.
+
+### Issue #4a — Output is now topic-first
+
+**Before.** The reviewer's output started with `## Summary` (counts), followed by a paragraph naming "the spirit of the PR." Findings were structured `Where → What → Why → Suggested fix`. Headings labeled the location (`### B1. Three .pbi/localSettings.json files tracked-in-index`). A reader had to synthesize the verdict from the evidence.
+
+**After.**
+
+- The report opens with `## TL;DR`. Its first sentence is the merge-or-don't-merge call, stated outright ("Do not merge — …" / "Merge after the <N> blockers …" / "Merge clean — …"). The `## Summary` counts come *after* the TL;DR.
+- Every 🔴 / 🟡 / 💡 heading is a verdict, not a label. The same B1 from the run log now reads: `### B1. Drop three .pbi/localSettings.json files — they leak per-user DPAPI secrets and the .gitignore is already configured to ignore them`.
+- Body fields are reordered to `Why → Where → Fix`. The verdict heading already carries the "what"; the `What:` field is removed. 🔵 keeps `Where → Comment to author` (the question is the verdict).
+- Pinned in three places so the principle holds across runtimes:
+  - [references/review-rubric.md](references/review-rubric.md) — new top-level "Writing style — topic-first, not inductive" section with inductive-vs-topic-first contrasts; flipped field-order rule; new "Heading is the verdict" rule; updated anti-patterns list.
+  - [templates/review-report.template.md](templates/review-report.template.md) — `## TL;DR` section added above `## Summary`; finding bodies use `Why → Where → Fix`.
+  - [agents/powerbi-pr-reviewer.md](agents/powerbi-pr-reviewer.md) — Hard rules #8 / #9 / #10 added (topic-first headings, body order, TL;DR leads); Step 6 rewritten to mandate topic-first; honest-reviewing rules now lead with "You lead with the conclusion."
+
+### Issue #4b — Profiler gate is now mandatory and explicit
+
+**Before.** SKILL.md §3a said: *"User picks zero on both questions | Dispatch profiler in `project-hygiene-only` scope."* The path was reachable both intentionally (zero picks) and by the orchestrator simply not running the prompt — the run-log shows the latter. Nothing prevented silent fall-through.
+
+**After.**
+
+- A new top-of-file [Hard rules for the orchestrator](SKILL.md#hard-rules-for-the-orchestrator) section makes silent downgrade an explicit bug: *"The transcript of any review must show an explicit user choice — `Profile a sample` / `Skip profile` / `Cancel` — at the §3a gate."*
+- §3a now prepends a single-select gate `AskUserQuestion` with three options before the two multi-selects:
+  - **Profile a sample** (Recommended)
+  - **Skip profile** — explicit opt-in to `project-hygiene-only`
+  - **Cancel review**
+- The two multi-select questions (when the user picks "Profile a sample") now pre-rank options: any `*.SemanticModel/` or `*.Report/` touched by the current diff is annotated `(Recommended — touched by this PR)` and listed first. File counts are mandatory on every option label.
+- The "zero-on-both" silent fallback is replaced with: *"If the orchestrator finds itself about to dispatch `project-hygiene-only` without a logged user choice, that is a bug — re-ask the gate question."*
+- A new `user_chose_skip: <true | false>` frontmatter field on the conventions file distinguishes deliberate skips from any other `project-hygiene-only` state. When `true`, the §3 staleness check re-offers the gate on the next run rather than silently reusing the stub. The memory pointer records `Skip reason: user-explicit-skip` for the same purpose.
+- The profiler ([agents/powerbi-main-profiler.md](agents/powerbi-main-profiler.md)) takes a new `user_chose_skip` input, stamps it into frontmatter, and (when `true`) prepends §1 of the rendered file with: *"Skipped per user choice at the SKILL.md §3a gate — no §2 / §3 conventions profiled. Reviewer should cite only MS Learn + BPA and add a 🔵 caveat in the report."*
+- [references/conventions-schema.md](references/conventions-schema.md) documents the new field and the `project-hygiene-only` stub-file expectations (every required §2 / §3 subsection present with the stub line, not omitted). Validation rejects files missing `user_chose_skip` or with `user_chose_skip: true` outside `scope == project-hygiene-only`.
+
+### What was NOT re-validated end-to-end
+
+The skill still isn't installed in Claude Code, so the v1 caveat applies: changes were dry-run-reviewed against the run-log scenario (`cffinsights_ingka`, M ≈ 20, R ≈ 20) by hand-walking SKILL.md §3a and the reviewer's Step 6 output structure. The next user-run review will be the first true end-to-end test of the topic-first rendering and the gate-prompt enforcement.
+
+### Out of scope (deferred — tracked from run-log §6)
+
+These appear in the issue #4 run log but are intentionally not part of v1.3:
+
+- PHG-001 / PHG-002 / PHG-003 named rules in `bpa-rules-digest.md` (project-hygiene patterns for tracked-but-gitignored files, PR scope-creep heuristic, PBI Desktop "refresh and save" cluster).
+- `visualGroup` container handling in the Step 2b visual identity index.
+- Per-page deletion uniformity heuristic (collapse `N × M` deletions into one summarized finding).
+- Mandatory `git log --oneline <base>..<sub>` probe in SKILL.md Step 2.
+- Plan-mode preconditions block + tool-surface translation table at the top of SKILL.md.
+
+These are good candidates for a v1.4 issue.
+
 ## v1.2 changes — worktree-aware input resolution (Step 0)
 
 **Date:** 2026-05-19 — driven by a usability question after the first user trial: *"how should the skill ask for main vs. sub-branch?"*

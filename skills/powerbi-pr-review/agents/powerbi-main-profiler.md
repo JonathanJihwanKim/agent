@@ -18,6 +18,7 @@ You build the team-conventions profile from the **main branch** of a PBIP repo. 
 - **scope** — `full` (default), `sampled`, or `project-hygiene-only`. The orchestrator decides this in its Step 3a based on counts and/or user selection. Never auto-skip; if the orchestrator passes nothing, assume `full`.
 - **selected_models** — required when `scope == sampled`. List of `*.SemanticModel/` folder names (≤3) the user picked.
 - **selected_reports** — required when `scope == sampled`. List of `*.Report/` folder names (≤3) the user picked.
+- **user_chose_skip** — boolean, defaults `false`. Set to `true` only when `scope == project-hygiene-only` AND the user explicitly picked "Skip profile" at the SKILL.md §3a gate. Used to stamp the frontmatter so downstream consumers can distinguish a deliberate skip from an undecided state.
 
 ## Hard rules
 
@@ -49,7 +50,7 @@ Identify each `<name>.SemanticModel/` and `<name>.Report/`. A repo can have mult
 
 - If `scope == full` → iterate over **every** `*.SemanticModel/` in Step 4 and every `*.Report/` in Step 5. Set `sampled_models: []` and `sampled_reports: []` (frontmatter omits both lists per [conventions-schema.md](../references/conventions-schema.md)).
 - If `scope == sampled` → iterate only over `selected_models` in Step 4 and `selected_reports` in Step 5. Write both lists into the frontmatter. The full enumerations still populate `semantic_models:` / `reports:` so the reviewer knows what was *not* covered.
-- If `scope == project-hygiene-only` → run Step 3 only. Skip Steps 4 and 5. Write "No observable convention (out of scope: scope=project-hygiene-only)." into every required §2 and §3 subsection.
+- If `scope == project-hygiene-only` → run Step 3 only. Skip Steps 4 and 5. Write "No observable convention (out of scope: scope=project-hygiene-only)." into every required §2 and §3 subsection. Additionally, if `user_chose_skip == true`, prepend the §1 body with one line: *"Skipped per user choice at the SKILL.md §3a gate — no §2 / §3 conventions profiled. Reviewer should cite only MS Learn + BPA and add a 🔵 caveat in the report."*
 
 Never silently drop work. If the orchestrator passed `sampled` with empty selections, treat that as a bug and exit with: "Profiler got `scope=sampled` but no `selected_models` or `selected_reports`. Orchestrator should have routed to `project-hygiene-only`."
 
@@ -148,6 +149,7 @@ For each `<name>.Report/`:
 1. Render the result by filling in `templates/powerbi-conventions.template.md`.
 2. Stamp the frontmatter:
    - `scope:` ← the value passed in by the orchestrator.
+   - `user_chose_skip:` ← the value passed in by the orchestrator (defaults `false`). Set `true` only when `scope == project-hygiene-only` AND the user explicitly picked "Skip profile" at the §3a gate.
    - When `scope == sampled`: write `sampled_models:` and `sampled_reports:` with the user-selected lists. The full enumerations remain in `semantic_models:` / `reports:` so the reviewer knows what was out of scope.
    - When `scope == full` or `scope == project-hygiene-only`: omit `sampled_models` / `sampled_reports` entirely.
 3. Write to `<repo_root>/.claude/powerbi-conventions.md`. Create the `.claude/` directory if it doesn't exist.
@@ -165,8 +167,12 @@ metadata:
 Conventions profile location: `<repo_root>/.claude/powerbi-conventions.md`
 Profiled at: `<ISO timestamp>`
 Profiled against: `<target_branch>` @ `<TARGET_SHA>`
-Refresh trigger: `git rev-parse <target_branch>` differs from `<TARGET_SHA>` above.
+Scope: `<full | sampled | project-hygiene-only>`
+Skip reason: `<none | user-explicit-skip>`     # only when scope == project-hygiene-only
+Refresh trigger: `git rev-parse <target_branch>` differs from `<TARGET_SHA>` above. If skip reason is `user-explicit-skip`, the next review should re-offer the §3a gate rather than treating the stub file as authoritative.
 ```
+
+Set `Skip reason: user-explicit-skip` when the orchestrator passed `user_chose_skip == true`. Otherwise omit the line (or write `none`). The next run reads this to decide whether to silently reuse the file or re-prompt at the §3a gate.
 
 Append `- [powerbi-conventions](reference_powerbi_conventions.md) — points to this repo's PBIP conventions file` to `MEMORY.md` in that directory (create the file if absent).
 
